@@ -1,0 +1,13 @@
+version: '3.6'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.8.14-management-alpine
+    hostname: "rabbitmq"
+    ports:
+      - "5672:5672"
+
+  redis:
+    image: redis:6.2.1-alpine
+    ports:
+      - "6379:6379"
