@@ -1,0 +1,26 @@
+name: Test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Install dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y make
+          python -m pip install -U pip
+          pip install .[dev,redis]
+      - name: Lint with mypy
+        run: |
+          mypy chive
+      - name: Integration tests
+        run: |
+          make integration_tests

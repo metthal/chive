@@ -1,9 +1,9 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 setup(
     name="chive",
     version="0.1.0",
-    packages=["chive"],
+    packages=find_packages(),
     install_requires=[
         "aio-pika~=6.8.0",
         "ujson~=4.0.2"
