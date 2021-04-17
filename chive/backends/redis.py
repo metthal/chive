@@ -1,6 +1,7 @@
 import aioredis  # type: ignore
 import asyncio
 import logging
+import pickle
 import ujson
 
 from dataclasses import dataclass
@@ -96,7 +97,7 @@ class RedisBackend(ResultsBackend):
         except asyncio.TimeoutError:
             return None
 
-    async def store(self, task_id: str, data: Any):
+    async def store(self, task_id: str, data: dict):
         task_key = self._task_key(task_id)
         result_object = self._create_result_object(data)
         await self._connection.execute("setex", task_key, 120, result_object)
@@ -210,11 +211,11 @@ class RedisBackend(ResultsBackend):
     def _task_key(self, task_id: str) -> str:
         return f"task:{task_id}"
 
-    def _create_result_object(self, data: Any) -> bytes:
-        return ujson.dumps({"result": data}).encode("utf-8")
+    def _create_result_object(self, data: dict) -> bytes:
+        return pickle.dumps(data)
 
-    def _get_result(self, data: bytes) -> Any:
-        return ujson.loads(data.decode("utf-8"))["result"]
+    def _get_result(self, data: bytes) -> dict:
+        return pickle.loads(data)
 
     async def _reconnect_pubsub_connection(self):
         self._pubsub_connection = await aioredis.create_pool(self.url, maxsize=2)

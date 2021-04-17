@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
-from .backends.backend import ResultsBackend
+from chive.backends.backend import ResultsBackend
+from chive.task import TaskResult, TaskStatus
 
 
 class Result:
@@ -12,4 +13,7 @@ class Result:
         return await self.backend.ready(self.task_id)
 
     async def get(self, timeout: Optional[int] = None) -> Any:
-        return await self.backend.get(self.task_id, timeout=timeout)
+        result = await self.backend.get(self.task_id, timeout=timeout)
+        if result.status == TaskStatus.FAILURE:
+            raise result.error
+        return result.result

@@ -31,14 +31,11 @@ async def retry(
     try_number = 1
     while max_retries is None or try_number <= max_retries:
         try:
-            logger.error("HERE")
             return await coro(*args, **kwargs)
         except retry_on as err:
-            #logger.error(f"Caught exception {repr(err)}")
             retry_callback(err, try_number, wait_time)
             await asyncio.sleep(wait_time)
             try_number += 1
-            logger.error(f"max_retries: {max_retries}, try_number: {try_number}, max_retries: {max_retries}")
             if max_retries is not None and try_number > max_retries:
                 raise
             wait_time = min(wait_time * wait_exponential, max_wait_time)
