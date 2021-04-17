@@ -10,13 +10,13 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Union
 
-from chives.backends import ResultsBackendFactory
-from chives.common import RMQConnectionPool
-from chives.result import Result
-from chives.utils import retry
+from chive.backends import ResultsBackendFactory
+from chive.common import RMQConnectionPool
+from chive.result import Result
+from chive.utils import retry
 
 
-logger = logging.getLogger("chives")
+logger = logging.getLogger("chive")
 
 
 @dataclass
@@ -30,7 +30,7 @@ class TaskRegistry:
     tasks: Dict[str, TaskSpec] = {}
 
 
-class Chives:
+class Chive:
     def __init__(
         self,
         name: str,
@@ -134,7 +134,7 @@ class Chives:
     async def run_task(self, spec: TaskSpec, task) -> Any:
         func = spec.func.__wrapped__ if spec.wrapped else spec.func  # type: ignore
         if inspect.iscoroutinefunction(func):
-            return await func(*task["args"], **task["kwargs"])  # type: ignore
+            return await func(*task["args"], **task["kwargs"])
         else:
             return await asyncio.get_event_loop().run_in_executor(
                 self._sync_task_pool,
@@ -165,9 +165,9 @@ class Chives:
         await channel.set_qos(prefetch_count=self.concurrency)
         queue = await channel.declare_queue(task_name, durable=True)
         exchange = await channel.declare_exchange(
-            "chives", aio_pika.exchange.ExchangeType.TOPIC, durable=True
+            "chive", aio_pika.exchange.ExchangeType.TOPIC, durable=True
         )
-        await queue.bind("chives", routing_key=task_name)
+        await queue.bind("chive", routing_key=task_name)
         return queue, exchange
 
     def _log_results_backend_retry(
@@ -179,5 +179,5 @@ class Chives:
 
 
 def _run_sync_task(spec: TaskSpec, task: dict):
-    func = spec.func.__wrapped__ if spec.wrapped else spec.func
-    return spec.func(*task["args"], **task["kwargs"])  # type: ignore
+    func = spec.func.__wrapped__ if spec.wrapped else spec.func  # type: ignore
+    return spec.func(*task["args"], **task["kwargs"])

@@ -7,7 +7,7 @@ from typing import Any, Callable, Coroutine, Optional, Tuple, Type, TypeVar
 T = TypeVar("T")
 
 
-logger = logging.getLogger("chives")
+logger = logging.getLogger("chive")
 
 
 async def retry(

@@ -1,9 +1,9 @@
 from setuptools import setup
 
 setup(
-    name="chives",
+    name="chive",
     version="0.1.0",
-    packages=["chives"],
+    packages=["chive"],
     install_requires=[
         "aio-pika~=6.8.0",
         "ujson~=4.0.2"
@@ -21,6 +21,6 @@ setup(
         ],
     },
     entry_points={
-        #    "console_scripts": ["chives=chives:main"]
+        #    "console_scripts": ["chive=chive:main"]
     },
 )

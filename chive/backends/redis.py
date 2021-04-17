@@ -6,11 +6,11 @@ import ujson
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Set, Union
 
-from chives.backends.backend import ResultsBackend
-from chives.utils import retry
+from chive.backends.backend import ResultsBackend
+from chive.utils import retry
 
 
-logger = logging.getLogger("chives")
+logger = logging.getLogger("chive")
 
 
 @dataclass

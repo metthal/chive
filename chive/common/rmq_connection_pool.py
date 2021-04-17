@@ -1,5 +1,6 @@
 import aio_pika
 import aio_pika.pool
+import asyncio
 
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -27,6 +28,9 @@ class RMQConnectionPool:
 
     @asynccontextmanager
     async def channel(self):
+        if self._channel_pool is None:
+            raise ConnectionError("RMQConnectionPool is not connected")
+
         async with self._channel_pool.acquire() as channel:
             yield channel
 
@@ -34,5 +38,8 @@ class RMQConnectionPool:
         return await aio_pika.connect_robust(self.url)
 
     async def _get_channel(self) -> aio_pika.Channel:
+        if self._connection_pool is None:
+            raise ConnectionError("RMQConnectionPool is not connected")
+
         async with self._connection_pool.acquire() as connection:
             return await connection.channel()

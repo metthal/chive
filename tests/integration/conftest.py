@@ -3,8 +3,8 @@ import aio_pika
 import asyncio
 import pytest
 
-from chives import Chives
-from chives.utils import retry
+from chive import Chive
+from chive.utils import retry
 
 
 pytest_plugins = ["docker_compose"]
@@ -22,7 +22,7 @@ async def redis_is_live(redis_url: str):
 
 @pytest.mark.asyncio
 @pytest.fixture(scope="function")
-async def chives(request, function_scoped_container_getter):
+async def chive(request, function_scoped_container_getter):
     rabbitmq = function_scoped_container_getter.get("rabbitmq").network_info[0]
     redis = function_scoped_container_getter.get("redis").network_info[0]
 
@@ -50,7 +50,7 @@ async def chives(request, function_scoped_container_getter):
         assert False, f"Failed to start Redis container {repr(err)}"
 
     try:
-        app = Chives(request.node.name, rabbitmq_url, results=redis_url)
+        app = Chive(request.node.name, rabbitmq_url, results=redis_url)
         await app.init()
         yield app
     finally:
