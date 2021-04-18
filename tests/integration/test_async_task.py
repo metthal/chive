@@ -2,7 +2,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_simple_async_task(chive):
+async def test_async_task(chive):
     @chive.task()
     async def plus(x, y):
         return x + y

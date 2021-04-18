@@ -8,24 +8,17 @@ import uuid
 
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type, Union
 
 from chive.backends import ResultsBackendFactory
 from chive.exceptions import RetryTask
 from chive.common import RMQConnectionPool
 from chive.result import Result
-from chive.task import TaskResult, TaskStatus
+from chive.task import AsyncTask, SyncTask, TaskParams, TaskResult, TaskSpec, TaskStatus
 from chive.utils import retry
 
 
 logger = logging.getLogger("chive")
-
-
-@dataclass
-class TaskSpec:
-    name: str
-    func: Callable
-    wrapped: bool
 
 
 class TaskRegistry:
@@ -59,7 +52,6 @@ class Chive:
     async def start_worker(self, task_name: str):
         logger.info(f"Starting worker for task '{task_name}'...")
         async with self._rmq_pool.channel() as channel:
-            task_name = f"task.{task_name}"
             queue, _ = await self._init_rmq_objects(channel, task_name)
             await queue.consume(self._process_task)
 
@@ -71,82 +63,59 @@ class Chive:
         self._stop_event.set()
 
     async def submit_task(
-        self, name: str, args: Union[tuple, list], kwargs: Dict[str, Any], **options
+        self,
+        name: str,
+        **kwargs,  # , args: Union[tuple, list], kwargs: Dict[str, Any], **options
     ) -> Result:
-        logging.debug(
-            f"Submitting task '{name}' with args '{args}' and kwargs '{kwargs}'"
-        )
+        logging.debug(f"Submitting task '{name}' with args '{kwargs}'")
         async with self._rmq_pool.channel() as channel:
             _, exchange = await self._init_rmq_objects(channel, name)
 
-            task_id = options.get("id", None) or str(uuid.uuid4())
-            logging.debug(f"  --> task_id: {task_id}")
+            params: TaskParams = TaskParams(**kwargs)
+            logging.debug(f"  --> task_id: {params.task_id}")
             await exchange.publish(
-                aio_pika.Message(
-                    body=self._serialize_task(
-                        id=task_id,
-                        name=name,
-                        args=args,
-                        kwargs=kwargs,
-                        retries=options.get("retries", 0),
-                    )
-                ),
-                routing_key=name,
+                aio_pika.Message(body=self._serialize_task_params(name, params)),
+                routing_key=f"task.{name}",
             )
 
-            return Result(self._results_backend, task_id)
+            return Result(self._results_backend, params.task_id)
 
     def task(self, name: Optional[str] = None):
-        def decorator(func: Callable) -> Callable:
-            task_name: str = "task.{}".format(name or func.__name__)
-
-            @functools.wraps(func)
-            async def wrapper(*args, **kwargs) -> Result:
-                return await self.submit_task(task_name, args=args, kwargs=kwargs)
-
-            TaskRegistry.tasks[task_name] = TaskSpec(
-                name=task_name, func=wrapper, wrapped=True
-            )
+        def decorator(
+            task: Union[Callable, Type[AsyncTask], Type[SyncTask]]
+        ) -> Callable:
+            task_name, wrapper = self._register_task(task, name=name)
+            TaskRegistry.tasks[task_name] = TaskSpec(name=task_name, task=wrapper)
             return wrapper
 
         return decorator
 
-    def register_task(self, func: Callable, name: Optional[str] = None) -> Callable:
-        task_name: str = "task.{}".format(name or func.__name__)
-
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs) -> Result:
-            return await self.submit_task(task_name, args=args, kwargs=kwargs)
-
-        TaskRegistry.tasks[task_name] = TaskSpec(
-            name=task_name, func=func, wrapped=False
-        )
+    def register_task(
+        self,
+        task: Union[Callable, Type[AsyncTask], Type[SyncTask]],
+        name: Optional[str] = None,
+    ) -> Callable:
+        task_name, wrapper = self._register_task(task, name=name)
+        TaskRegistry.tasks[task_name] = TaskSpec(name=task_name, task=task)
         return wrapper
 
     async def _process_task(self, message: aio_pika.IncomingMessage):
         async with message.process():
-            task: dict = ujson.loads(message.body.decode("utf-8"))
-            retries: int = task["retries"]
+            name, params = self._deserialize_task_params(message.body)
+            spec: TaskSpec = TaskRegistry.tasks[name]
+
             logger.info(
                 "Received task '{}'{}".format(
-                    task["id"],
-                    f" (try #{retries})" if retries > 0 else "",
+                    params.task_id,
+                    f" (try #{params.retries})" if params.retries > 0 else "",
                 )
             )
-            spec: TaskSpec = TaskRegistry.tasks[task["name"]]
 
-            result: TaskResult = TaskResult(task_id=task["id"])
-
-            try:
-                result.result = await self._run_task(spec, task)
-                result.status = TaskStatus.SUCCESS
-            except RetryTask:
-                result.status = TaskStatus.RETRIED
-                task["retries"] += 1
-                await self.submit_task(**task)
-            except Exception as err:
-                result.error = err
-                result.status = TaskStatus.FAILURE
+            result: TaskResult = await self._run_task(spec, params)
+            if result.status == TaskStatus.RETRIED:
+                params.retries += 1
+                if params.retries <= 5:
+                    await self.submit_task(name, **params.asdict())
 
             if result.status != TaskStatus.RETRIED:
                 logger.info(f"Storing result for task '{result.task_id}'")
@@ -161,39 +130,39 @@ class Chive:
                 "Finished task '{}' with status '{}'{}".format(
                     result.task_id,
                     result.status,
-                    f" (try #{task['retries']})" if task["retries"] > 0 else "",
+                    f" (try #{params.retries})" if params.retries > 0 else "",
                 )
             )
 
-    async def _run_task(self, spec: TaskSpec, task) -> Any:
-        func = spec.func.__wrapped__ if spec.wrapped else spec.func  # type: ignore
-        if inspect.iscoroutinefunction(func):
-            return await func(*task["args"], **task["kwargs"])
+    async def _run_task(self, spec: TaskSpec, params: TaskParams) -> TaskResult:
+        if spec.is_async:
+            task = spec.create_task(params)
+            return await task.run()  # type: ignore
         else:
             return await asyncio.get_event_loop().run_in_executor(
                 self._sync_task_pool,
-                functools.partial(_run_sync_task, spec, task),
+                functools.partial(_run_sync_task, spec, params),
             )
 
-    def _serialize_task(
+    def _register_task(
         self,
-        id: str,
-        name: str,
-        args: Optional[Union[tuple, list]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
-        retries: int = 0,
-    ):
-        args = args or tuple()
-        kwargs = kwargs or {}
-        return ujson.dumps(
-            {
-                "id": id,
-                "name": name,
-                "args": args,
-                "kwargs": kwargs,
-                "retries": retries,
-            }
-        ).encode("utf-8")
+        task: Union[Callable, Type[AsyncTask], Type[SyncTask]],
+        name: Optional[str] = None,
+    ) -> Tuple[str, Callable]:
+        task_name = name or task.__name__
+
+        @functools.wraps(task)
+        async def wrapper(*args, **kwargs) -> Result:
+            return await self.submit_task(task_name, args=args, kwargs=kwargs)
+
+        return task_name, wrapper
+
+    def _serialize_task_params(self, name: str, params: TaskParams) -> bytes:
+        return ujson.dumps({"name": name, "params": params.asdict()}).encode("utf-8")
+
+    def _deserialize_task_params(self, data: bytes) -> Tuple[str, TaskParams]:
+        task_json = ujson.loads(data.decode("utf-8"))
+        return task_json["name"], TaskParams(**task_json["params"])
 
     async def _init_rmq_objects(
         self, channel: aio_pika.Channel, task_name: str
@@ -203,7 +172,7 @@ class Chive:
         exchange = await channel.declare_exchange(
             "chive", aio_pika.exchange.ExchangeType.TOPIC, durable=True
         )
-        await queue.bind("chive", routing_key=task_name)
+        await queue.bind("chive", routing_key=f"task.{task_name}")
         return queue, exchange
 
     def _log_results_backend_retry(
@@ -214,6 +183,6 @@ class Chive:
         )
 
 
-def _run_sync_task(spec: TaskSpec, task: dict):
-    func = spec.func.__wrapped__ if spec.wrapped else spec.func  # type: ignore
-    return func(*task["args"], **task["kwargs"])
+def _run_sync_task(spec: TaskSpec, params: TaskParams) -> TaskResult:
+    task = spec.create_task(params)
+    return task.run()  # type: ignore

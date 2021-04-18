@@ -6,7 +6,7 @@ def mult(x, y):
 
 
 @pytest.mark.asyncio
-async def test_simple_sync_task(chive):
+async def test_sync_task(chive):
     mult_task = chive.register_task(mult, "mult")
 
     try:
