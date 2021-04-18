@@ -62,11 +62,7 @@ class Chive:
         logger.info(f"Stopping worker...")
         self._stop_event.set()
 
-    async def submit_task(
-        self,
-        name: str,
-        **kwargs,  # , args: Union[tuple, list], kwargs: Dict[str, Any], **options
-    ) -> Result:
+    async def submit_task(self, name: str, **kwargs) -> Result:
         logging.debug(f"Submitting task '{name}' with args '{kwargs}'")
         async with self._rmq_pool.channel() as channel:
             _, exchange = await self._init_rmq_objects(channel, name)
