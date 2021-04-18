@@ -13,6 +13,7 @@ setup(
             "aioredis~=1.3.1"
         ],
         "dev": [
+            "black~=20.8b1",
             "mypy>=0.812,<1.0",
             "pytest~=6.2.3",
             "pytest-asyncio~=0.14.0",

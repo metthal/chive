@@ -22,6 +22,9 @@ jobs:
       - name: Lint with mypy
         run: |
           mypy chive
+      - name: Lint with black
+        run: |
+          black chive --check --diff --color
       - name: Integration tests
         run: |
           make integration_tests

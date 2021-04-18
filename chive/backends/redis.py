@@ -84,7 +84,9 @@ class RedisBackend(ResultsBackend):
         # If we haven't found the result yet then add ourselves to the subscription list so that
         # subscription loop picks us up and SUBSCRIBEs us. At the same time we wake up subscription loop
         # in case it was blocked by subscription list being empty.
-        logger.debug(f"Task '{task_id}' does not exist in Redis backend. Subscribing for changes...")
+        logger.debug(
+            f"Task '{task_id}' does not exist in Redis backend. Subscribing for changes..."
+        )
         loop = asyncio.get_event_loop()
         sub = Subscription(
             task_id=task_id, timeout_in=timeout, result=loop.create_future()
@@ -136,7 +138,16 @@ class RedisBackend(ResultsBackend):
 
             # If there are any new subscribers then resend SUBSCRIBE command.
             if new_subs:
-                logger.debug("Subscribing to channels\n{}".format("\n".join([sub._channel.name.decode("utf-8") for sub in self._subscription_list])))
+                logger.debug(
+                    "Subscribing to channels\n{}".format(
+                        "\n".join(
+                            [
+                                sub._channel.name.decode("utf-8")
+                                for sub in self._subscription_list
+                            ]
+                        )
+                    )
+                )
                 self._pubsub_connection.execute_pubsub(
                     "subscribe", *[sub._channel for sub in self._subscription_list]
                 )

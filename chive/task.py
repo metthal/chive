@@ -20,11 +20,11 @@ class TaskResult:
 
 class Task:
     pass
-    #def __init__(self, name: str):
+    # def __init__(self, name: str):
     #    self.name = name
 
-    #async def execute(self):
+    # async def execute(self):
     #    pass
 
-    #async def on_succcess(self):
+    # async def on_succcess(self):
     #    pass
