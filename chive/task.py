@@ -22,6 +22,7 @@ class TaskParams:
     args: tuple = field(default_factory=tuple)
     kwargs: dict = field(default_factory=dict)
     retries: int = 0
+    priority: Optional[int] = None
 
     def asdict(self) -> dict:
         return dataclasses.asdict(self)
@@ -130,6 +131,7 @@ class AsyncTask(TaskMixin):
 class TaskSpec:
     name: str
     task: Union[Callable, Type[AsyncTask], Type[SyncTask]]
+    max_priority: Optional[int] = None
 
     @property
     def task_type(self):

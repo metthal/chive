@@ -52,7 +52,8 @@ class Chive:
     async def start_worker(self, task_name: str):
         logger.info(f"Starting worker for task '{task_name}'...")
         async with self._rmq_pool.channel() as channel:
-            queue, _ = await self._init_rmq_objects(channel, task_name)
+            spec: TaskSpec = TaskRegistry.tasks[task_name]
+            queue, _ = await self._init_rmq_objects(channel, spec)
             await queue.consume(self._process_task)
 
     async def wait_for_stop(self):
@@ -65,23 +66,29 @@ class Chive:
     async def submit_task(self, name: str, **kwargs) -> Result:
         logging.debug(f"Submitting task '{name}' with args '{kwargs}'")
         async with self._rmq_pool.channel() as channel:
-            _, exchange = await self._init_rmq_objects(channel, name)
+            spec: TaskSpec = TaskRegistry.tasks[name]
+            _, exchange = await self._init_rmq_objects(channel, spec)
 
             params: TaskParams = TaskParams(**kwargs)
             logging.debug(f"  --> task_id: {params.task_id}")
             await exchange.publish(
-                aio_pika.Message(body=self._serialize_task_params(name, params)),
+                aio_pika.Message(
+                    body=self._serialize_task_params(name, params),
+                    priority=params.priority,
+                ),
                 routing_key=f"task.{name}",
             )
 
             return Result(self._results_backend, params.task_id)
 
-    def task(self, name: Optional[str] = None):
+    def task(self, name: Optional[str] = None, max_priority: Optional[int] = None):
         def decorator(
             task: Union[Callable, Type[AsyncTask], Type[SyncTask]]
         ) -> Callable:
             task_name, wrapper = self._register_task(task, name=name)
-            TaskRegistry.tasks[task_name] = TaskSpec(name=task_name, task=wrapper)
+            TaskRegistry.tasks[task_name] = TaskSpec(
+                name=task_name, task=wrapper, max_priority=max_priority
+            )
             return wrapper
 
         return decorator
@@ -90,9 +97,12 @@ class Chive:
         self,
         task: Union[Callable, Type[AsyncTask], Type[SyncTask]],
         name: Optional[str] = None,
+        max_priority: Optional[int] = None,
     ) -> Callable:
         task_name, wrapper = self._register_task(task, name=name)
-        TaskRegistry.tasks[task_name] = TaskSpec(name=task_name, task=task)
+        TaskRegistry.tasks[task_name] = TaskSpec(
+            name=task_name, task=task, max_priority=max_priority
+        )
         return wrapper
 
     async def _process_task(self, message: aio_pika.IncomingMessage):
@@ -161,14 +171,19 @@ class Chive:
         return task_json["name"], TaskParams(**task_json["params"])
 
     async def _init_rmq_objects(
-        self, channel: aio_pika.Channel, task_name: str
+        self, channel: aio_pika.Channel, spec: TaskSpec
     ) -> Tuple[aio_pika.Queue, aio_pika.Exchange]:
         await channel.set_qos(prefetch_count=self.concurrency)
-        queue = await channel.declare_queue(task_name, durable=True)
+        queue_args: dict = {}
+        if spec.max_priority is not None:
+            queue_args["x-max-priority"] = spec.max_priority
+        queue = await channel.declare_queue(
+            spec.name, durable=True, arguments=queue_args
+        )
         exchange = await channel.declare_exchange(
             "chive", aio_pika.exchange.ExchangeType.TOPIC, durable=True
         )
-        await queue.bind("chive", routing_key=f"task.{task_name}")
+        await queue.bind("chive", routing_key=f"task.{spec.name}")
         return queue, exchange
 
     def _log_results_backend_retry(
