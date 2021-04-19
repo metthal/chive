@@ -6,7 +6,8 @@ setup(
     packages=find_packages(),
     install_requires=[
         "aio-pika~=6.8.0",
-        "ujson~=4.0.2"
+        "typer~=0.3.2",
+        "ujson~=4.0.2",
     ],
     extras_require={
         "redis": [
@@ -22,6 +23,8 @@ setup(
         ],
     },
     entry_points={
-        #    "console_scripts": ["chive=chive:main"]
+        "console_scripts": [
+            "chive=chive.cli:cli"
+        ]
     },
 )
